@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111511">
+  <title>Rzut — licznik darta</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" aria-label="Rzut — strona główna">
+      <span class="brand-mark" aria-hidden="true">R</span>
+      <span>rzut<span class="brand-dot">.</span></span>
+    </a>
+    <span class="topbar-note"><span class="status-dot"></span> LICZNIK DARTA</span>
+  </header>
+
+  <main class="layout">
+    <section class="intro">
+      <p class="eyebrow">GRAJ. RZUCAJ. ŚLEDŹ WYNIK.</p>
+      <h1>Skup się na<br><span>następnym rzucie.</span></h1>
+      <p class="intro-copy">Kamera obserwuje tarczę, a Rzut szacuje punkty po każdym trafieniu.</p>
+      <div class="camera-note">
+        <span class="note-icon" aria-hidden="true">i</span>
+        <p>Ustaw kamerę nieruchomo, na wprost tarczy. Dobre, stałe oświetlenie pomaga w wykrywaniu trafień.</p>
+      </div>
+    </section>
+
+    <section class="game-card" aria-label="Licznik punktów darta">
+      <div class="card-heading">
+        <div>
+          <p class="eyebrow">TWOJA ROZGRYWKA</p>
+          <h2>501 <span>— klasyk</span></h2>
+        </div>
+        <button class="icon-button" id="resetButton" type="button" aria-label="Resetuj wynik" title="Resetuj wynik">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0-14.9-4L3 10m0-6v6h6M4 13a8.1 8.1 0 0 0 14.9 4L21 14m0 6v-6h-6"/></svg>
+        </button>
+      </div>
+
+      <div class="score-panel">
+        <div class="score-label">POZOSTAŁO</div>
+        <div class="score-value" id="remainingScore">501</div>
+        <div class="score-bottom">
+          <span>zdobyte punkty</span>
+          <strong id="totalScore">0</strong>
+        </div>
+      </div>
+
+      <div class="camera-section">
+        <div class="section-title">
+          <h3>Podgląd tarczy</h3>
+          <span class="camera-state" id="cameraState"><span class="state-dot"></span> kamera wyłączona</span>
+        </div>
+        <div class="camera-frame" id="cameraFrame">
+          <video id="video" autoplay muted playsinline aria-label="Podgląd z kamery"></video>
+          <canvas id="overlay" aria-label="Obszar kalibracji tarczy"></canvas>
+          <div class="camera-placeholder" id="cameraPlaceholder">
+            <div class="camera-icon" aria-hidden="true">
+              <svg viewBox="0 0 48 48"><path d="M8 15h7l3-4h12l3 4h7v23H8z"/><circle cx="24" cy="26" r="8"/></svg>
+            </div>
+            <strong>Obraz z kamery pojawi się tutaj</strong>
+            <span>Użyj kamery skierowanej na tarczę</span>
+          </div>
+          <div class="camera-badge" id="cameraBadge"><span class="state-dot"></span> LIVE</div>
+          <div class="zoom-popover" id="zoomPopover" hidden>
+            <label class="zoom-control" for="zoomSlider">
+              <span>Zoom</span>
+              <output id="zoomValue" for="zoomSlider">1.0×</output>
+              <input id="zoomSlider" type="range" min="1" max="3" step="0.1" value="1" aria-label="Powiększenie podglądu kamery">
+            </label>
+          </div>
+          <button class="camera-zoom-button" id="zoomButton" type="button" aria-label="Pokaż ustawienia zoomu" aria-expanded="false" aria-controls="zoomPopover" title="Ustawienia zoomu">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l1.5-2h7L17 7h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+          </button>
+        </div>
+        <div class="camera-actions">
+          <button class="button button-secondary" id="cameraButton" type="button">Włącz kamerę</button>
+          <button class="button button-primary" id="calibrateButton" type="button" disabled>Skalibruj tarczę</button>
+        </div>
+        <p class="status-message" id="statusMessage" role="status" aria-live="polite">Włącz kamerę, aby rozpocząć.</p>
+        <div class="score-edit">
+          <button class="button button-secondary" id="editScoreButton" type="button" disabled>Edytuj wynik</button>
+          <form class="score-edit-form" id="scoreEditForm" hidden>
+            <label for="scoreEditInput">Nowy wynik ostatniego rzutu</label>
+            <div class="score-edit-controls">
+              <input id="scoreEditInput" type="number" min="0" max="60" step="1" inputmode="numeric" required>
+              <button class="button button-primary" type="submit">Zapisz</button>
+              <button class="button button-secondary" id="cancelEditButton" type="button">Anuluj</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="history-section">
+        <div class="section-title">
+          <h3>Ostatnie rzuty</h3>
+          <span class="throw-count"><span id="throwCount">0</span> rzutów</span>
+        </div>
+        <ol class="throw-list" id="throwList">
+          <li class="empty-history">Wyniki pojawią się po wykryciu rzutu.</li>
+        </ol>
+      </div>
+      <p class="disclaimer">Wykrywanie jest eksperymentalne i może się mylić. Sprawdź wynik przed dalszą grą.</p>
+    </section>
+  </main>
+  <footer>ZRÓB MIEJSCE NA DOBRY RZUT <span aria-hidden="true">↗</span></footer>
+
+  <script>
+    (() => {
+      const video = document.querySelector("#video");
+      const overlay = document.querySelector("#overlay");
+      const ctx = overlay.getContext("2d");
+      const processCanvas = document.createElement("canvas");
+      const processCtx = processCanvas.getContext("2d", { willReadFrequently: true });
+      const cameraButton = document.querySelector("#cameraButton");
+      const calibrateButton = document.querySelector("#calibrateButton");
+      const zoomButton = document.querySelector("#zoomButton");
+      const zoomPopover = document.querySelector("#zoomPopover");
+      const zoomSlider = document.querySelector("#zoomSlider");
+      const zoomValue = document.querySelector("#zoomValue");
+      const cameraState = document.querySelector("#cameraState");
+      const cameraBadge = document.querySelector("#cameraBadge");
+      const placeholder = document.querySelector("#cameraPlaceholder");
+      const statusMessage = document.querySelector("#statusMessage");
+      const editScoreButton = document.querySelector("#editScoreButton");
+      const scoreEditForm = document.querySelector("#scoreEditForm");
+      const scoreEditInput = document.querySelector("#scoreEditInput");
+      const throwList = document.querySelector("#throwList");
+      const wedges = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
+      let stream = null;
+      let animationFrame = 0;
+      let previousFrame = null;
+      let baseline = null;
+      let board = null;
+      let calibrationPoints = [];
+      let calibrationStep = -1;
+      let stableFrames = 0;
+      let candidatePoint = null;
+      let candidateStartedAt = 0;
+      let candidateMissFrames = 0;
+      let throws = [];
+      let totalThrows = 0;
+      let total = 0;
+      let remaining = 501;
+
+      function updateZoom() {
+        const zoom = Number(zoomSlider.value);
+        const transform = `scale(${zoom})`;
+        video.style.transform = transform;
+        overlay.style.transform = transform;
+        zoomValue.value = `${zoom.toFixed(1)}×`;
+        zoomValue.textContent = zoomValue.value;
+      }
+
+      function setStatus(message, kind = "") {
+        statusMessage.textContent = message;
+        statusMessage.className = `status-message${kind ? ` ${kind}` : ""}`;
+      }
+
+      function setCameraStatus(ready) {
+        cameraState.innerHTML = `<span class="state-dot"></span> ${ready ? "kamera aktywna" : "kamera wyłączona"}`;
+        cameraBadge.classList.toggle("visible", ready);
+        placeholder.classList.toggle("hidden", ready);
+        cameraButton.textContent = ready ? "Wyłącz kamerę" : "Włącz kamerę";
+      }
+
+      function fitCanvas() {
+        if (!video.videoWidth || !video.videoHeight) return;
+        overlay.width = video.videoWidth;
+        overlay.height = video.videoHeight;
+        processCanvas.width = Math.min(480, video.videoWidth);
+        processCanvas.height = Math.round(processCanvas.width * video.videoHeight / video.videoWidth);
+        previousFrame = null;
+        baseline = null;
+        drawBoardGuide();
+      }
+
+      function drawBoardGuide() {
+        ctx.clearRect(0, 0, overlay.width, overlay.height);
+        if (board) {
+          ctx.save();
+          ctx.strokeStyle = "rgba(201, 255, 87, .92)";
+          ctx.lineWidth = Math.max(2, overlay.width / 450);
+          ctx.setLineDash([8, 7]);
+          ctx.beginPath();
+          ctx.arc(board.x, board.y, board.radius, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.beginPath();
+          ctx.arc(board.x, board.y, Math.max(5, overlay.width / 180), 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        calibrationPoints.forEach((point, index) => {
+          ctx.beginPath();
+          ctx.fillStyle = "#c9ff57";
+          ctx.strokeStyle = "#111511";
+          ctx.lineWidth = Math.max(2, overlay.width / 500);
+          ctx.arc(point.x, point.y, Math.max(7, overlay.width / 100), 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = "#111511";
+          ctx.font = `700 ${Math.max(9, overlay.width / 75)}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(String(index + 1), point.x, point.y);
+        });
+
+      }
+
+      function sourcePoint(event) {
+        const rect = overlay.getBoundingClientRect();
+        const scale = Math.min(rect.width / overlay.width, rect.height / overlay.height);
+        const drawnWidth = overlay.width * scale;
+        const drawnHeight = overlay.height * scale;
+        const offsetX = (rect.width - drawnWidth) / 2;
+        const offsetY = (rect.height - drawnHeight) / 2;
+        return {
+          x: (event.clientX - rect.left - offsetX) / scale,
+          y: (event.clientY - rect.top - offsetY) / scale
+        };
+      }
+
+      overlay.addEventListener("click", event => {
+        const point = sourcePoint(event);
+        if (point.x < 0 || point.y < 0 || point.x > overlay.width || point.y > overlay.height) return;
+        if (calibrationStep < 0) return;
+        calibrationPoints.push(point);
+        calibrationStep++;
+
+        if (calibrationStep === 1) {
+          drawBoardGuide();
+          setStatus("2/3: kliknij zewnętrzną krawędź podwójnego pierścienia tarczy.");
+        } else if (calibrationStep === 2) {
+          const [center, edge] = calibrationPoints;
+          const radius = Math.hypot(edge.x - center.x, edge.y - center.y);
+          const minRadius = Math.max(4, Math.min(10, Math.min(overlay.width, overlay.height) * 0.005));
+          if (radius < minRadius) {
+            calibrationPoints = [];
+            calibrationStep = 0;
+            drawBoardGuide();
+            setStatus("Punkty są zbyt blisko. Kliknij ponownie środek, a potem krawędź tarczy dalej od niego.", "error");
+            return;
+          }
+          drawBoardGuide();
+          setStatus("3/3: kliknij środek pola 20 (na godzinie 12).");
+        } else {
+          const [center, edge, top] = calibrationPoints;
+          const radius = Math.hypot(edge.x - center.x, edge.y - center.y);
+          board = {
+            x: center.x, y: center.y, radius,
+            topAngle: Math.atan2(top.x - center.x, center.y - top.y)
+          };
+          calibrationStep = -1;
+          calibrationPoints = [];
+          fitCanvas();
+          captureBaseline();
+          setStatus("Gotowe. Rzuć jedną lotkę — wynik zostanie oszacowany automatycznie.", "success");
+        }
+      });
+
+      function beginCalibration() {
+        if (!stream) return;
+        board = null;
+        calibrationPoints = [];
+        calibrationStep = 0;
+        drawBoardGuide();
+        setStatus("1/3: kliknij środek tarczy w podglądzie.");
+      }
+
+      function captureBaseline() {
+        if (!stream || !board) return;
+        processCtx.drawImage(video, 0, 0, processCanvas.width, processCanvas.height);
+        baseline = processCtx.getImageData(0, 0, processCanvas.width, processCanvas.height);
+        previousFrame = baseline;
+        stableFrames = 0;
+        candidatePoint = null;
+        candidateStartedAt = 0;
+        candidateMissFrames = 0;
+      }
+
+      function getBoardPoint(x, y) {
+        const scaleX = processCanvas.width / overlay.width;
+        const scaleY = processCanvas.height / overlay.height;
+        const cx = board.x * scaleX;
+        const cy = board.y * scaleY;
+        const radius = board.radius * scaleX;
+        const dx = x - cx;
+        const dy = y - cy;
+        return { cx, cy, radius, dx, dy, distance: Math.hypot(dx, dy) };
+      }
+
+      function analyze(current, previous) {
+        if (!baseline || !board) return null;
+        const w = processCanvas.width;
+        const h = processCanvas.height;
+        const pixels = current.data;
+        const base = baseline.data;
+        const prev = previous.data;
+        const mask = new Uint8Array(w * h);
+        const scaleX = w / overlay.width;
+        const scaleY = h / overlay.height;
+        const cx = board.x * scaleX;
+        const cy = board.y * scaleY;
+        const radius = board.radius * scaleX;
+        const minX = Math.max(0, Math.floor(cx - radius));
+        const maxX = Math.min(w - 1, Math.ceil(cx + radius));
+        const minY = Math.max(0, Math.floor(cy - radius));
+        const maxY = Math.min(h - 1, Math.ceil(cy + radius));
+        let changed = 0;
+        let moving = 0;
+
+        for (let y = minY; y <= maxY; y++) {
+          for (let x = minX; x <= maxX; x++) {
+            const dx = x - cx;
+            const dy = y - cy;
+            if (dx * dx + dy * dy > radius * radius) continue;
+            const i = (y * w + x) * 4;
+            const diffBase = Math.max(
+              Math.abs(pixels[i] - base[i]),
+              Math.abs(pixels[i + 1] - base[i + 1]),
+              Math.abs(pixels[i + 2] - base[i + 2])
+            );
+            if (diffBase > 24) {
+              mask[y * w + x] = 1;
+              changed++;
+            }
+            const diffPrev = Math.max(
+              Math.abs(pixels[i] - prev[i]),
+              Math.abs(pixels[i + 1] - prev[i + 1]),
+              Math.abs(pixels[i + 2] - prev[i + 2])
+            );
+            if (diffPrev > 24) moving++;
+          }
+        }
+
+        const visited = new Uint8Array(w * h);
+        const queue = new Int32Array(w * h);
+        let best = null;
+        const maxArea = Math.max(50, Math.PI * radius * radius * 0.1);
+        for (let start = 0; start < mask.length; start++) {
+          if (!mask[start] || visited[start]) continue;
+          let head = 0;
+          let tail = 0;
+          let sumX = 0;
+          let sumY = 0;
+          let tipX = 0;
+          let tipY = 0;
+          let tipDistance = -Infinity;
+          queue[tail++] = start;
+          visited[start] = 1;
+          while (head < tail) {
+            const index = queue[head++];
+            const x = index % w;
+            const y = Math.floor(index / w);
+            sumX += x;
+            sumY += y;
+            const distanceToCenter = (x - cx) ** 2 + (y - cy) ** 2;
+            if (distanceToCenter > tipDistance) {
+              tipDistance = distanceToCenter;
+              tipX = x;
+              tipY = y;
+            }
+            for (let oy = -1; oy <= 1; oy++) {
+              for (let ox = -1; ox <= 1; ox++) {
+                if (!ox && !oy) continue;
+                const nx = x + ox;
+                const ny = y + oy;
+                if (nx < minX || nx > maxX || ny < minY || ny > maxY) continue;
+                const next = ny * w + nx;
+                if (mask[next] && !visited[next]) {
+                  visited[next] = 1;
+                  queue[tail++] = next;
+                }
+              }
+            }
+          }
+          if (tail >= 3 && tail <= maxArea && (!best || tail > best.area)) {
+            best = { area: tail, x: tipX, y: tipY };
+          }
+        }
+        return { changed, moving, best, radius };
+      }
+
+      function estimateScore(point) {
+        const factor = Math.hypot(point.x - board.x, point.y - board.y) / board.radius;
+        const angle = Math.atan2(point.x - board.x, board.y - point.y);
+        const relative = (angle - board.topAngle + Math.PI * 2) % (Math.PI * 2);
+        const segment = wedges[Math.floor((relative + Math.PI / 20) / (Math.PI / 10)) % 20];
+        if (factor <= 0.016) return { score: 50, label: "BULL", segment };
+        if (factor <= 0.063) return { score: 25, label: "25", segment };
+        if (factor >= 0.94 && factor <= 1.04) return { score: segment * 2, label: `D${segment}`, segment };
+        if (factor >= 0.57 && factor <= 0.63) return { score: segment * 3, label: `T${segment}`, segment };
+        if (factor > 1.04) return { score: 0, label: "MISS", segment };
+        return { score: segment, label: String(segment), segment };
+      }
+
+      function recordThrow(result) {
+        throws.unshift({ ...result, time: new Date() });
+        if (throws.length > 12) throws.pop();
+        totalThrows++;
+        total += result.score;
+        remaining = Math.max(0, remaining - result.score);
+        editScoreButton.disabled = false;
+        scoreEditInput.value = String(result.score);
+        document.querySelector("#totalScore").textContent = total;
+        document.querySelector("#remainingScore").textContent = remaining;
+        document.querySelector("#throwCount").textContent = totalThrows;
+        renderThrows();
+      }
+
+      function renderThrows() {
+        throwList.replaceChildren();
+        if (!throws.length) {
+          const empty = document.createElement("li");
+          empty.className = "empty-history";
+          empty.textContent = "Wyniki pojawią się po wykryciu rzutu.";
+          throwList.append(empty);
+          return;
+        }
+        throws.forEach((item, index) => {
+          const li = document.createElement("li");
+          li.className = "throw-item";
+          const number = document.createElement("span");
+          number.className = "throw-number";
+          number.textContent = String(throws.length - index).padStart(2, "0");
+          const name = document.createElement("span");
+          name.className = "throw-name";
+          name.textContent = item.label;
+          const time = document.createElement("time");
+          time.className = "throw-time";
+          time.textContent = item.time.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+          const score = document.createElement("strong");
+          score.className = "throw-score";
+          score.textContent = `+${item.score}`;
+          li.append(number, name, time, score);
+          throwList.append(li);
+        });
+      }
+
+      function tick() {
+        if (!stream) return;
+        animationFrame = requestAnimationFrame(tick);
+        if (video.readyState < 2 || !processCanvas.width || !processCanvas.height) return;
+        processCtx.drawImage(video, 0, 0, processCanvas.width, processCanvas.height);
+        const current = processCtx.getImageData(0, 0, processCanvas.width, processCanvas.height);
+        if (baseline && board && previousFrame) {
+          const found = analyze(current, previousFrame);
+          const boardArea = Math.PI * found.radius * found.radius;
+          const enoughChange = Boolean(found.best);
+          const mostlyStill = found.moving < Math.max(100, boardArea * 0.08);
+          if (enoughChange && mostlyStill) {
+            candidateMissFrames = 0;
+            if (!candidatePoint) {
+              candidatePoint = { x: found.best.x, y: found.best.y };
+              stableFrames = 1;
+              candidateStartedAt = performance.now();
+              setStatus("Wykryto możliwe trafienie. Sprawdzam pozycję przez 2 sekundy…");
+            } else {
+              const distance = Math.hypot(found.best.x - candidatePoint.x, found.best.y - candidatePoint.y);
+              if (distance > found.radius * 0.35) {
+                candidatePoint = { x: found.best.x, y: found.best.y };
+                stableFrames = 1;
+                candidateStartedAt = performance.now();
+                setStatus("Pozycja trafienia się zmieniła. Sprawdzam ją przez 2 sekundy…");
+              } else {
+                candidatePoint.x = candidatePoint.x * 0.8 + found.best.x * 0.2;
+                candidatePoint.y = candidatePoint.y * 0.8 + found.best.y * 0.2;
+                stableFrames++;
+              }
+            }
+          } else if (candidatePoint && !found.best && candidateMissFrames < 8) {
+            candidateMissFrames++;
+          } else {
+            stableFrames = 0;
+            candidatePoint = null;
+            candidateStartedAt = 0;
+            candidateMissFrames = 0;
+          }
+          if (candidatePoint && stableFrames >= 5
+            && performance.now() - candidateStartedAt >= 2000) {
+            const hit = estimateScore({
+              x: candidatePoint.x * overlay.width / processCanvas.width,
+              y: candidatePoint.y * overlay.height / processCanvas.height
+            });
+            recordThrow(hit);
+            baseline = current;
+            stableFrames = 0;
+            candidatePoint = null;
+            candidateStartedAt = 0;
+            candidateMissFrames = 0;
+            setStatus(`Automatycznie naliczono: ${hit.label} · ${hit.score} pkt. Jeśli trzeba, popraw ostatni wynik poniżej.`, "success");
+          }
+        }
+        previousFrame = current;
+      }
+
+      cameraButton.addEventListener("click", async () => {
+        if (stream) {
+          cancelAnimationFrame(animationFrame);
+          stream.getTracks().forEach(track => track.stop());
+          stream = null;
+          video.srcObject = null;
+          board = null;
+          baseline = null;
+          calibrationStep = -1;
+          drawBoardGuide();
+          setCameraStatus(false);
+          calibrateButton.disabled = true;
+          setStatus("Włącz kamerę, aby rozpocząć.");
+          return;
+        }
+        if (!navigator.mediaDevices?.getUserMedia) {
+          setStatus("Ta przeglądarka nie udostępnia kamery. Otwórz stronę przez HTTPS lub localhost.", "error");
+          return;
+        }
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+          video.srcObject = stream;
+          await video.play();
+          fitCanvas();
+          setCameraStatus(true);
+          calibrateButton.disabled = false;
+          setStatus("Ustaw tarczę w kadrze, a następnie rozpocznij kalibrację.");
+          animationFrame = requestAnimationFrame(tick);
+        } catch (error) {
+          stream = null;
+          setStatus(error.name === "NotAllowedError"
+            ? "Brak zgody na dostęp do kamery. Zezwól przeglądarce na jej użycie."
+            : "Nie udało się uruchomić kamery. Sprawdź, czy jest podłączona i dostępna.", "error");
+        }
+      });
+
+      calibrateButton.addEventListener("click", beginCalibration);
+      editScoreButton.addEventListener("click", () => {
+        if (!throws.length) return;
+        scoreEditInput.value = String(throws[0].score);
+        scoreEditForm.hidden = !scoreEditForm.hidden;
+        if (!scoreEditForm.hidden) scoreEditInput.focus();
+      });
+      scoreEditForm.addEventListener("submit", event => {
+        event.preventDefault();
+        if (!throws.length || !scoreEditForm.reportValidity()) return;
+        const newScore = Number(scoreEditInput.value);
+        if (!Number.isInteger(newScore) || newScore < 0 || newScore > 60) {
+          scoreEditInput.setCustomValidity("Wpisz wynik od 0 do 60.");
+          scoreEditInput.reportValidity();
+          return;
+        }
+        scoreEditInput.setCustomValidity("");
+        const lastThrow = throws[0];
+        total += newScore - lastThrow.score;
+        lastThrow.score = newScore;
+        lastThrow.label = "Ręcznie";
+        remaining = Math.max(0, 501 - total);
+        document.querySelector("#totalScore").textContent = total;
+        document.querySelector("#remainingScore").textContent = remaining;
+        renderThrows();
+        scoreEditForm.hidden = true;
+        setStatus(`Poprawiono wynik ostatniego rzutu na ${newScore} pkt.`, "success");
+      });
+      scoreEditInput.addEventListener("input", () => {
+        scoreEditInput.setCustomValidity("");
+      });
+      document.querySelector("#cancelEditButton").addEventListener("click", () => {
+        scoreEditForm.hidden = true;
+      });
+      zoomButton.addEventListener("click", () => {
+        const isOpen = zoomButton.getAttribute("aria-expanded") !== "true";
+        zoomButton.setAttribute("aria-expanded", String(isOpen));
+        zoomButton.setAttribute("aria-label", isOpen ? "Ukryj ustawienia zoomu" : "Pokaż ustawienia zoomu");
+        zoomPopover.hidden = !isOpen;
+      });
+      zoomSlider.addEventListener("input", updateZoom);
+      document.querySelector("#resetButton").addEventListener("click", () => {
+        throws = [];
+        totalThrows = 0;
+        total = 0;
+        remaining = 501;
+        editScoreButton.disabled = true;
+        scoreEditForm.hidden = true;
+        document.querySelector("#totalScore").textContent = "0";
+        document.querySelector("#remainingScore").textContent = "501";
+        document.querySelector("#throwCount").textContent = "0";
+        renderThrows();
+        if (board) captureBaseline();
+        setStatus(board ? "Wynik wyzerowany. Rzuć następną lotkę." : "Wynik wyzerowany. Włącz i skalibruj kamerę.");
+      });
+
+      window.addEventListener("resize", drawBoardGuide);
+      video.addEventListener("loadedmetadata", fitCanvas);
+      updateZoom();
+    })();
+  </script>
+</body>
+</html>
