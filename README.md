@@ -1,0 +1,1 @@
+# Licznik...do...darta
